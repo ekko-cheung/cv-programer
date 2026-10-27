@@ -54,7 +54,8 @@ impl Store {
                pinned INTEGER NOT NULL DEFAULT 0,
                sync INTEGER NOT NULL DEFAULT 0
              );
-             CREATE INDEX IF NOT EXISTS idx_items_created ON items(created DESC);",
+             CREATE INDEX IF NOT EXISTS idx_items_created ON items(created DESC);
+             CREATE TABLE IF NOT EXISTS kv(key TEXT PRIMARY KEY, value TEXT NOT NULL);",
         )?;
         Ok(Self { conn: Mutex::new(conn) })
     }
@@ -144,6 +145,32 @@ impl Store {
             v
         };
         c.execute(&format!("DELETE {sql}"), [keep])?;
+        Ok(blobs)
+    }
+
+    pub fn get_kv(&self, key: &str) -> Option<String> {
+        let c = self.conn.lock().unwrap();
+        c.query_row("SELECT value FROM kv WHERE key=?1", [key], |r| r.get(0)).optional().ok().flatten()
+    }
+
+    pub fn set_kv(&self, key: &str, value: &str) -> rusqlite::Result<()> {
+        self.conn
+            .lock()
+            .unwrap()
+            .execute("INSERT INTO kv(key,value) VALUES(?1,?2) ON CONFLICT(key) DO UPDATE SET value=?2", params![key, value])?;
+        Ok(())
+    }
+
+    /// Deletes history (optionally keeping pinned items); returns orphaned blob paths.
+    pub fn clear(&self, keep_pinned: bool) -> rusqlite::Result<Vec<String>> {
+        let c = self.conn.lock().unwrap();
+        let cond = if keep_pinned { "WHERE pinned=0" } else { "" };
+        let blobs: Vec<String> = {
+            let mut st = c.prepare(&format!("SELECT blob FROM items {cond} {} blob IS NOT NULL", if keep_pinned { "AND" } else { "WHERE" }))?;
+            let v = st.query_map([], |r| r.get(0))?.collect::<Result<_, _>>()?;
+            v
+        };
+        c.execute(&format!("DELETE FROM items {cond}"), [])?;
         Ok(blobs)
     }
 }

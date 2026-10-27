@@ -117,7 +117,7 @@
       <div class="empty">Nothing here yet — copy something.</div>
     {/each}
   </div>
-  <footer><span>↑↓ select</span><span>↵ paste</span><span>⇥ category</span><span>⌘P pin</span><span>esc close</span></footer>
+  <footer><span>↑↓ select</span><span>↵ paste</span><span>⇥ category</span><span>⌘P pin</span><span>esc close</span><button class="gear" title="Settings" onclick={() => invoke("open_settings")}>⚙</button></footer>
 </main>
 
 <style>
@@ -147,5 +147,6 @@
   .acts button:hover, .acts button.active { opacity: 1; background: var(--chip); }
   kbd { font: 11px ui-monospace, monospace; color: var(--muted); flex: none; width: 28px; text-align: right; }
   .empty { text-align: center; color: var(--muted); padding: 60px 0; }
-  footer { display: flex; gap: 14px; justify-content: center; padding: 8px; border-top: 1px solid var(--line); color: var(--muted); font-size: 11px; }
+  .gear { margin-left: 6px; opacity: 0.6; font-size: 13px; } .gear:hover { opacity: 1; }
+  footer { align-items: center; display: flex; gap: 14px; justify-content: center; padding: 8px; border-top: 1px solid var(--line); color: var(--muted); font-size: 11px; }
 </style>

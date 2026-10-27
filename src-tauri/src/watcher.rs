@@ -8,7 +8,6 @@ use std::{fs, sync::Arc, time::Duration};
 use tauri::{AppHandle, Emitter, Manager};
 
 const MAX_TEXT_BYTES: usize = 1 << 20;
-const MAX_KEEP: i64 = 2000;
 
 pub fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
@@ -67,7 +66,7 @@ impl ClipboardHandler for Handler {
             eprintln!("store error: {e}");
             return;
         }
-        if let Ok(orphans) = state.store.prune(MAX_KEEP) {
+        if let Ok(orphans) = state.store.prune(state.settings.lock().unwrap().max_items) {
             for p in orphans {
                 let _ = fs::remove_file(p);
             }

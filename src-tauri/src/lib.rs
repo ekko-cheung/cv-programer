@@ -1,21 +1,24 @@
 mod classify;
+mod settings;
 mod store;
 mod watcher;
 
 use clipboard_rs::{common::RustImage, Clipboard, ClipboardContext, RustImageData};
 use serde::Serialize;
-use std::{fs, path::PathBuf, sync::Arc, time::Duration};
+use settings::Settings;
+use std::{fs, path::PathBuf, sync::{Arc, Mutex}, time::Duration};
 use store::{Item, Store};
 use tauri::{
     menu::{Menu, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     AppHandle, Manager, WebviewUrl, WebviewWindowBuilder, WindowEvent,
 };
-use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
+use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 
 pub struct AppState {
     pub store: Store,
     pub blob_dir: PathBuf,
+    pub settings: Mutex<Settings>,
 }
 
 type State<'a> = tauri::State<'a, Arc<AppState>>;
@@ -58,6 +61,64 @@ fn set_pinned(state: State, id: i64, value: bool) -> Result<(), String> {
 #[tauri::command]
 fn set_sync(state: State, id: i64, value: bool) -> Result<(), String> {
     state.store.set_flag(id, "sync", value).map_err(err)
+}
+
+#[tauri::command]
+fn get_settings(state: State) -> Settings {
+    state.settings.lock().unwrap().clone()
+}
+
+#[tauri::command]
+fn save_settings(app: AppHandle, state: State, settings: Settings) -> Result<Settings, String> {
+    let settings = settings.sanitized();
+    let new_key: Shortcut = settings.hotkey.parse().map_err(|_| format!("Invalid shortcut: {}", settings.hotkey))?;
+    let old = state.settings.lock().unwrap().clone();
+    if old.hotkey != settings.hotkey {
+        let gs = app.global_shortcut();
+        let old_key: Option<Shortcut> = old.hotkey.parse().ok();
+        if let Some(k) = old_key {
+            let _ = gs.unregister(k);
+        }
+        if let Err(e) = gs.register(new_key) {
+            if let Some(k) = old_key {
+                let _ = gs.register(k);
+            }
+            return Err(format!("Cannot register shortcut (already in use?): {e}"));
+        }
+    }
+    state.store.set_kv("settings", &serde_json::to_string(&settings).map_err(err)?).map_err(err)?;
+    *state.settings.lock().unwrap() = settings.clone();
+    for p in state.store.prune(settings.max_items).map_err(err)? {
+        let _ = fs::remove_file(p);
+    }
+    Ok(settings)
+}
+
+#[tauri::command]
+fn clear_history(state: State, keep_pinned: bool) -> Result<(), String> {
+    for p in state.store.clear(keep_pinned).map_err(err)? {
+        let _ = fs::remove_file(p);
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn open_settings(app: AppHandle) {
+    if let Some(p) = app.get_webview_window("panel") {
+        let _ = p.close();
+    }
+    if let Some(w) = app.get_webview_window("settings") {
+        let _ = w.show();
+        let _ = w.set_focus();
+        return;
+    }
+    let _ = WebviewWindowBuilder::new(&app, "settings", WebviewUrl::App("settings".into()))
+        .title("Settings")
+        .inner_size(560.0, 520.0)
+        .min_inner_size(480.0, 420.0)
+        .center()
+        .focused(true)
+        .build();
 }
 
 #[tauri::command]
@@ -130,14 +191,12 @@ fn toggle_panel(app: &AppHandle) {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let mods = if cfg!(target_os = "macos") { Modifiers::SUPER | Modifiers::SHIFT } else { Modifiers::CONTROL | Modifiers::SHIFT };
-    let hotkey = Shortcut::new(Some(mods), Code::KeyV);
-
     tauri::Builder::default()
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
-                .with_handler(move |app, sc, ev| {
-                    if *sc == hotkey && ev.state() == ShortcutState::Pressed {
+                .with_handler(|app, _sc, ev| {
+                    // Only the toggle shortcut is ever registered.
+                    if ev.state() == ShortcutState::Pressed {
                         toggle_panel(app);
                     }
                 })
@@ -150,9 +209,13 @@ pub fn run() {
             set_pinned,
             set_sync,
             hide_panel,
-            paste_item
+            paste_item,
+            get_settings,
+            save_settings,
+            clear_history,
+            open_settings
         ])
-        .setup(move |app| {
+        .setup(|app| {
             #[cfg(target_os = "macos")]
             app.set_activation_policy(tauri::ActivationPolicy::Accessory);
 
@@ -160,19 +223,37 @@ pub fn run() {
             let blob_dir = dir.join("blobs");
             fs::create_dir_all(&blob_dir)?;
             let store = Store::open(&dir.join("clipboard.db"))?;
-            app.manage(Arc::new(AppState { store, blob_dir }));
-
-            app.global_shortcut().register(hotkey)?;
+            let mut settings: Settings = store
+                .get_kv("settings")
+                .and_then(|j| serde_json::from_str(&j).ok())
+                .unwrap_or_default();
+            settings = settings.sanitized();
+            let gs = app.global_shortcut();
+            if !settings.hotkey.parse::<Shortcut>().is_ok_and(|k| gs.register(k).is_ok()) {
+                // Stored shortcut is invalid or taken: fall back to the default.
+                settings.hotkey = settings::default_hotkey();
+                gs.register(settings.hotkey.parse::<Shortcut>()?)?;
+            }
+            app.manage(Arc::new(AppState { store, blob_dir, settings: Mutex::new(settings) }));
 
             let show = MenuItem::with_id(app, "show", "Show Clipboard", true, None::<&str>)?;
+            let prefs = MenuItem::with_id(app, "settings", "Settings…", true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
-            let menu = Menu::with_items(app, &[&show, &quit])?;
-            TrayIconBuilder::new()
-                .icon(app.default_window_icon().unwrap().clone())
+            let menu = Menu::with_items(app, &[&show, &prefs, &quit])?;
+            let builder = TrayIconBuilder::new();
+            // macOS menu bar wants a monochrome template image; Windows keeps the colored app icon.
+            #[cfg(target_os = "macos")]
+            let builder = builder
+                .icon(tauri::image::Image::from_bytes(include_bytes!("../icons/tray.png"))?)
+                .icon_as_template(true);
+            #[cfg(not(target_os = "macos"))]
+            let builder = builder.icon(app.default_window_icon().unwrap().clone());
+            builder
                 .menu(&menu)
                 .show_menu_on_left_click(false)
                 .on_menu_event(|app, ev| match ev.id.as_ref() {
                     "show" => toggle_panel(app),
+                    "settings" => open_settings(app.clone()),
                     "quit" => app.exit(0),
                     _ => {}
                 })
