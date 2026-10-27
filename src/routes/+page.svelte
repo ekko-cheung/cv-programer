@@ -69,10 +69,12 @@
     load();
     const focus = () => { search.focus(); search.select(); };
     focus();
+    // Native focus is granted asynchronously after the window is shown.
+    const timers = [50, 150, 400].map((ms) => setTimeout(() => document.activeElement !== search && focus(), ms));
     // The webview may only receive focus after mount, so refocus when the window gains it.
     window.addEventListener("focus", focus);
     const un = listen("items-changed", load);
-    return () => { window.removeEventListener("focus", focus); un.then((f) => f()); };
+    return () => { timers.forEach(clearTimeout); window.removeEventListener("focus", focus); un.then((f) => f()); };
   });
 </script>
 

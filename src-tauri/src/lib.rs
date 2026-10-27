@@ -117,6 +117,9 @@ fn toggle_panel(app: &AppHandle) {
     else {
         return;
     };
+    // As an Accessory (tray-only) app on macOS the window doesn't become key on its own.
+    let _ = w.show();
+    let _ = w.set_focus();
     let win = w.clone();
     w.on_window_event(move |ev| {
         if let WindowEvent::Focused(false) = ev {
