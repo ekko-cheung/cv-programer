@@ -2,6 +2,7 @@
   import { invoke, convertFileSrc } from "@tauri-apps/api/core";
   import { listen } from "@tauri-apps/api/event";
   import { onMount, tick } from "svelte";
+  import { combo, isMac } from "$lib/platform";
 
   type Item = { id: number; kind: string; category: string; preview: string; blob: string | null; created: number; pinned: boolean; sync: boolean };
   type Count = { category: string; count: number };
@@ -107,17 +108,17 @@
           <span class="time">{ago(it.created)}</span>
           <div class="acts">
             <button title="Sync" class:active={it.sync} onclick={(e) => { e.stopPropagation(); toggle(it, "sync"); }}>☁</button>
-            <button title="Pin (⌘P)" class:active={it.pinned} onclick={(e) => { e.stopPropagation(); toggle(it, "pinned"); }}>📌</button>
+            <button title="Pin ({combo('P')})" class:active={it.pinned} onclick={(e) => { e.stopPropagation(); toggle(it, "pinned"); }}>📌</button>
             <button title="Delete" onclick={(e) => { e.stopPropagation(); remove(it); }}>✕</button>
           </div>
         </div>
-        {#if idx < 9}<kbd>⌘{idx + 1}</kbd>{/if}
+        {#if idx < 9}<kbd>{combo(String(idx + 1))}</kbd>{/if}
       </div>
     {:else}
       <div class="empty">Nothing here yet — copy something.</div>
     {/each}
   </div>
-  <footer><span>↑↓ select</span><span>↵ paste</span><span>⇥ category</span><span>⌘P pin</span><span>esc close</span><button class="gear" title="Settings" onclick={() => invoke("open_settings")}>⚙</button></footer>
+  <footer><span>↑↓ select</span><span>{isMac ? "↵" : "Enter"} paste</span><span>{isMac ? "⇥" : "Tab"} category</span><span>{combo("P")} pin</span><span>{isMac ? "esc" : "Esc"} close</span><button class="gear" title="Settings" onclick={() => invoke("open_settings")}>⚙</button></footer>
 </main>
 
 <style>
@@ -145,7 +146,7 @@
   .row.sel .acts { display: flex; } .row.sel .time { display: none; }
   .acts button { padding: 2px 5px; border-radius: 6px; opacity: 0.5; font-size: 12px; }
   .acts button:hover, .acts button.active { opacity: 1; background: var(--chip); }
-  kbd { font: 11px ui-monospace, monospace; color: var(--muted); flex: none; width: 28px; text-align: right; }
+  kbd { font: 11px ui-monospace, monospace; color: var(--muted); flex: none; min-width: 28px; text-align: right; white-space: nowrap; }
   .empty { text-align: center; color: var(--muted); padding: 60px 0; }
   .gear { margin-left: 6px; opacity: 0.6; font-size: 13px; } .gear:hover { opacity: 1; }
   footer { align-items: center; display: flex; gap: 14px; justify-content: center; padding: 8px; border-top: 1px solid var(--line); color: var(--muted); font-size: 11px; }

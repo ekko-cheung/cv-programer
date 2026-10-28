@@ -1,10 +1,10 @@
 <script lang="ts">
   import { invoke } from "@tauri-apps/api/core";
   import { onMount } from "svelte";
+  import { isMac, prettyAccelerator as pretty } from "$lib/platform";
 
   type Settings = { hotkey: string; max_items: number };
 
-  const isMac = navigator.userAgent.includes("Mac");
   let saved = $state<Settings | null>(null);
   let form = $state<Settings>({ hotkey: "", max_items: 2000 });
   let recording = $state(false);
@@ -17,13 +17,6 @@
     saved = await invoke<Settings>("get_settings");
     form = { ...saved };
   });
-
-  function pretty(acc: string) {
-    return acc
-      .split("+")
-      .map((p) => (isMac ? ({ Super: "⌘", Control: "⌃", Alt: "⌥", Shift: "⇧" } as Record<string, string>)[p] : p) ?? p)
-      .join(isMac ? " " : " + ");
-  }
 
   function keyName(e: KeyboardEvent): string | null {
     if (/^Key[A-Z]$/.test(e.code)) return e.code.slice(3);
@@ -41,7 +34,7 @@
     const key = keyName(e);
     if (!key) return; // modifier-only press so far
     const mods = [e.metaKey && "Super", e.ctrlKey && "Control", e.altKey && "Alt", e.shiftKey && "Shift"].filter(Boolean) as string[];
-    if (!mods.length) { status = { ok: false, msg: "Include at least one modifier key (⌘ / Ctrl / Alt / Shift)." }; return; }
+    if (!mods.length) { status = { ok: false, msg: "Include at least one modifier key (" + (isMac ? "⌘ / ⌃ / ⌥ / ⇧" : "Ctrl / Alt / Shift / Win") + ")." }; return; }
     form.hotkey = [...mods, key].join("+");
     recording = false;
     status = null;
