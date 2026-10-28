@@ -28,6 +28,8 @@ sha2 = "0.11.1"
 regex = "1.13.1"
 uuid = { version = "1.29.0", features = ["v4"] }
 enigo = "0.6.1"
+rust-s3 = { version = "0.38.0", default-features = false, features = ["sync", "sync-rustls-tls"] }
+keyring = { version = "3", features = ["apple-native", "windows-native"] }
 
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration

@@ -3,19 +3,24 @@
   import { onMount } from "svelte";
   import { isMac, prettyAccelerator as pretty } from "$lib/platform";
 
-  type Settings = { hotkey: string; max_items: number };
+  type S3 = { endpoint: string; region: string; bucket: string; prefix: string; access_key: string; path_style: boolean };
+  type Settings = { hotkey: string; max_items: number; s3: S3 };
 
   let saved = $state<Settings | null>(null);
-  let form = $state<Settings>({ hotkey: "", max_items: 2000 });
+  let form = $state<Settings>({ hotkey: "", max_items: 2000, s3: { endpoint: "", region: "", bucket: "", prefix: "", access_key: "", path_style: false } });
+  let secret = $state("");
+  let hasSecret = $state(false);
+  let testing = $state(false);
   let recording = $state(false);
   let status = $state<{ ok: boolean; msg: string } | null>(null);
   let confirmClear = $state(false);
 
-  const dirty = $derived(saved !== null && (saved.hotkey !== form.hotkey || saved.max_items !== form.max_items));
+  const dirty = $derived(saved !== null && (JSON.stringify(saved) !== JSON.stringify(form) || secret !== ""));
 
   onMount(async () => {
     saved = await invoke<Settings>("get_settings");
-    form = { ...saved };
+    form = structuredClone($state.snapshot(saved));
+    hasSecret = await invoke<boolean>("has_s3_secret");
   });
 
   function keyName(e: KeyboardEvent): string | null {
@@ -42,12 +47,36 @@
 
   async function save() {
     try {
+      if (secret !== "") {
+        await invoke("set_s3_secret", { secret });
+        hasSecret = true;
+        secret = "";
+      }
       saved = await invoke<Settings>("save_settings", { settings: form });
-      form = { ...saved };
+      form = structuredClone($state.snapshot(saved));
       status = { ok: true, msg: "Saved." };
     } catch (e) {
       status = { ok: false, msg: String(e) };
     }
+  }
+
+  async function testS3() {
+    testing = true;
+    status = { ok: true, msg: "Testing connection…" };
+    try {
+      await invoke("test_s3", { config: form.s3, secret: secret || null });
+      status = { ok: true, msg: "Connection OK — bucket is readable and writable." };
+    } catch (e) {
+      status = { ok: false, msg: String(e) };
+    } finally {
+      testing = false;
+    }
+  }
+
+  async function removeSecret() {
+    await invoke("set_s3_secret", { secret: "" });
+    hasSecret = false;
+    secret = "";
   }
 
   async function clear(keepPinned: boolean) {
@@ -81,6 +110,27 @@
         <div class="hint">Unpinned items to keep (50 – 20,000). Older ones are removed.</div>
       </div>
       <input type="number" min="50" max="20000" step="50" bind:value={form.max_items} />
+    </div>
+  </section>
+
+  <section>
+    <h2>S3 storage</h2>
+    <p class="hint block">Items marked with ☁ are synced to this bucket. Works with AWS S3, Cloudflare R2, MinIO, Aliyun OSS and other S3-compatible services.</p>
+
+    <label class="f"><span>Endpoint</span><input class="wide" bind:value={form.s3.endpoint} placeholder="https://… (empty for AWS S3)" spellcheck="false" /></label>
+    <label class="f"><span>Region</span><input class="wide" bind:value={form.s3.region} placeholder="us-east-1 (R2: auto)" spellcheck="false" /></label>
+    <label class="f"><span>Bucket</span><input class="wide" bind:value={form.s3.bucket} spellcheck="false" /></label>
+    <label class="f"><span>Path prefix</span><input class="wide" bind:value={form.s3.prefix} placeholder="cv-programer/" spellcheck="false" /></label>
+    <label class="f"><span>Access key ID</span><input class="wide" bind:value={form.s3.access_key} spellcheck="false" autocomplete="off" /></label>
+    <label class="f">
+      <span>Secret access key</span>
+      <input class="wide" type="password" bind:value={secret} autocomplete="off" placeholder={hasSecret ? "•••••••• (saved in system keychain)" : ""} />
+    </label>
+    <label class="f check"><span>Path-style URLs</span><input type="checkbox" bind:checked={form.s3.path_style} /></label>
+
+    <div class="row end">
+      {#if hasSecret}<button onclick={removeSecret}>Remove saved secret</button>{/if}
+      <button disabled={testing} onclick={testS3}>Test connection</button>
     </div>
   </section>
 
@@ -119,6 +169,12 @@
   .label { font-weight: 500; }
   .hint { color: var(--muted); font-size: 12px; margin-top: 2px; max-width: 300px; }
   .row { display: flex; gap: 6px; }
+  .row.end { justify-content: flex-end; padding: 8px 0 4px; }
+  .hint.block { max-width: none; margin: 0 0 8px; }
+  .f { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 5px 0; }
+  .f > span { color: var(--fg); }
+  .f input.wide { width: 300px; text-align: left; }
+  .f.check input { width: auto; }
   button, input { padding: 6px 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--chip); }
   input { width: 100px; text-align: right; outline: none; user-select: text; }
   input:focus, .keys.rec { border-color: var(--accent); }

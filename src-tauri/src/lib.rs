@@ -1,4 +1,5 @@
 mod classify;
+mod s3;
 mod settings;
 mod store;
 mod watcher;
@@ -94,6 +95,28 @@ fn save_settings(app: AppHandle, state: State, settings: Settings) -> Result<Set
     Ok(settings)
 }
 
+/// Whether an S3 secret key is stored (the key itself never leaves the backend).
+#[tauri::command]
+fn has_s3_secret() -> bool {
+    s3::load_secret().is_some()
+}
+
+/// `secret`: Some(non-empty) replaces the stored key, Some("") removes it, None keeps it.
+#[tauri::command]
+fn set_s3_secret(secret: Option<String>) -> Result<(), String> {
+    match secret {
+        Some(s) => s3::store_secret(&s),
+        None => Ok(()),
+    }
+}
+
+/// Tests the given config; uses the stored secret when `secret` is empty.
+#[tauri::command]
+async fn test_s3(config: settings::S3Config, secret: Option<String>) -> Result<(), String> {
+    let secret = secret.filter(|s| !s.is_empty()).or_else(s3::load_secret).unwrap_or_default();
+    tauri::async_runtime::spawn_blocking(move || s3::test(&config, &secret)).await.map_err(err)?
+}
+
 #[tauri::command]
 fn clear_history(state: State, keep_pinned: bool) -> Result<(), String> {
     for p in state.store.clear(keep_pinned).map_err(err)? {
@@ -114,8 +137,8 @@ fn open_settings(app: AppHandle) {
     }
     let _ = WebviewWindowBuilder::new(&app, "settings", WebviewUrl::App("settings".into()))
         .title("Settings")
-        .inner_size(560.0, 520.0)
-        .min_inner_size(480.0, 420.0)
+        .inner_size(600.0, 700.0)
+        .min_inner_size(520.0, 480.0)
         .center()
         .focused(true)
         .build();
@@ -213,6 +236,9 @@ pub fn run() {
             get_settings,
             save_settings,
             clear_history,
+            has_s3_secret,
+            set_s3_secret,
+            test_s3,
             open_settings
         ])
         .setup(|app| {
