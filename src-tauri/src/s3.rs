@@ -40,7 +40,7 @@ pub fn bucket(cfg: &S3Config, secret: &str) -> Result<Box<Bucket>, String> {
     Ok(if cfg.path_style { b.with_path_style() } else { b })
 }
 
-fn key(cfg: &S3Config, name: &str) -> String {
+pub fn key(cfg: &S3Config, name: &str) -> String {
     let p = cfg.prefix.trim().trim_matches('/');
     if p.is_empty() { name.into() } else { format!("{p}/{name}") }
 }

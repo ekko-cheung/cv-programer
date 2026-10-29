@@ -2,12 +2,13 @@ mod classify;
 mod s3;
 mod settings;
 mod store;
+mod syncer;
 mod watcher;
 
 use clipboard_rs::{common::RustImage, Clipboard, ClipboardContext, RustImageData};
 use serde::Serialize;
 use settings::Settings;
-use std::{fs, path::PathBuf, sync::{Arc, Mutex}, time::Duration};
+use std::{fs, path::PathBuf, sync::{atomic::{AtomicBool, Ordering}, Arc, Mutex}, time::Duration};
 use store::{Item, Store};
 use tauri::{
     menu::{Menu, MenuItem},
@@ -20,6 +21,9 @@ pub struct AppState {
     pub store: Store,
     pub blob_dir: PathBuf,
     pub settings: Mutex<Settings>,
+    pub sync_lock: Mutex<()>,
+    pub sync_dirty: AtomicBool,
+    pub sync_status: Mutex<syncer::Status>,
 }
 
 type State<'a> = tauri::State<'a, Arc<AppState>>;
@@ -51,6 +55,7 @@ fn delete_item(state: State, id: i64) -> Result<(), String> {
     if let Some(p) = state.store.delete(id).map_err(err)? {
         let _ = fs::remove_file(p);
     }
+    state.sync_dirty.store(true, Ordering::Relaxed);
     Ok(())
 }
 
@@ -61,7 +66,9 @@ fn set_pinned(state: State, id: i64, value: bool) -> Result<(), String> {
 
 #[tauri::command]
 fn set_sync(state: State, id: i64, value: bool) -> Result<(), String> {
-    state.store.set_flag(id, "sync", value).map_err(err)
+    state.store.set_flag(id, "sync", value).map_err(err)?;
+    state.sync_dirty.store(true, Ordering::Relaxed);
+    Ok(())
 }
 
 #[tauri::command]
@@ -89,6 +96,7 @@ fn save_settings(app: AppHandle, state: State, settings: Settings) -> Result<Set
     }
     state.store.set_kv("settings", &serde_json::to_string(&settings).map_err(err)?).map_err(err)?;
     *state.settings.lock().unwrap() = settings.clone();
+    state.sync_dirty.store(true, Ordering::Relaxed);
     for p in state.store.prune(settings.max_items).map_err(err)? {
         let _ = fs::remove_file(p);
     }
@@ -115,6 +123,17 @@ fn set_s3_secret(secret: Option<String>) -> Result<(), String> {
 async fn test_s3(config: settings::S3Config, secret: Option<String>) -> Result<(), String> {
     let secret = secret.filter(|s| !s.is_empty()).or_else(s3::load_secret).unwrap_or_default();
     tauri::async_runtime::spawn_blocking(move || s3::test(&config, &secret)).await.map_err(err)?
+}
+
+#[tauri::command]
+async fn sync_now(app: AppHandle, state: State<'_>) -> Result<syncer::Report, String> {
+    let state = state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || syncer::run_and_record(&app, &state)).await.map_err(err)?
+}
+
+#[tauri::command]
+fn sync_status(state: State) -> syncer::Status {
+    state.sync_status.lock().unwrap().clone()
 }
 
 #[tauri::command]
@@ -239,6 +258,8 @@ pub fn run() {
             has_s3_secret,
             set_s3_secret,
             test_s3,
+            sync_now,
+            sync_status,
             open_settings
         ])
         .setup(|app| {
@@ -260,7 +281,14 @@ pub fn run() {
                 settings.hotkey = settings::default_hotkey();
                 gs.register(settings.hotkey.parse::<Shortcut>()?)?;
             }
-            app.manage(Arc::new(AppState { store, blob_dir, settings: Mutex::new(settings) }));
+            app.manage(Arc::new(AppState {
+                store,
+                blob_dir,
+                settings: Mutex::new(settings),
+                sync_lock: Mutex::new(()),
+                sync_dirty: AtomicBool::new(false),
+                sync_status: Mutex::new(syncer::Status::default()),
+            }));
 
             let show = MenuItem::with_id(app, "show", "Show Clipboard", true, None::<&str>)?;
             let prefs = MenuItem::with_id(app, "settings", "Settings…", true, None::<&str>)?;
@@ -291,6 +319,7 @@ pub fn run() {
                 .build(app)?;
 
             watcher::spawn(app.handle().clone());
+            syncer::spawn(app.handle().clone());
             Ok(())
         })
         .build(tauri::generate_context!())

@@ -4,10 +4,23 @@
   import { isMac, prettyAccelerator as pretty } from "$lib/platform";
 
   type S3 = { endpoint: string; region: string; bucket: string; prefix: string; access_key: string; path_style: boolean };
-  type Settings = { hotkey: string; max_items: number; s3: S3 };
+  type Sync = { enabled: boolean; categories: string[]; interval_secs: number; max_blob_mb: number };
+  type Report = { uploaded: number; downloaded: number; deleted: number; skipped: number };
+  type SyncStatus = { at: number; error: string | null; report: Report };
+  type Settings = { hotkey: string; max_items: number; s3: S3; sync: Sync };
+
+  const SYNC_CATEGORIES = [
+    { id: "text", label: "Text" },
+    { id: "code", label: "Code" },
+    { id: "link", label: "Links" },
+    { id: "image", label: "Images" },
+  ];
+  const INTERVALS = [{ v: 60, l: "1 minute" }, { v: 300, l: "5 minutes" }, { v: 900, l: "15 minutes" }, { v: 3600, l: "1 hour" }];
 
   let saved = $state<Settings | null>(null);
-  let form = $state<Settings>({ hotkey: "", max_items: 2000, s3: { endpoint: "", region: "", bucket: "", prefix: "", access_key: "", path_style: false } });
+  let form = $state<Settings>({ hotkey: "", max_items: 2000, s3: { endpoint: "", region: "", bucket: "", prefix: "", access_key: "", path_style: false }, sync: { enabled: false, categories: [], interval_secs: 300, max_blob_mb: 10 } });
+  let syncing = $state(false);
+  let lastSync = $state<SyncStatus | null>(null);
   let secret = $state("");
   let hasSecret = $state(false);
   let testing = $state(false);
@@ -21,7 +34,33 @@
     saved = await invoke<Settings>("get_settings");
     form = structuredClone($state.snapshot(saved));
     hasSecret = await invoke<boolean>("has_s3_secret");
+    lastSync = await invoke<SyncStatus>("sync_status");
   });
+
+  function toggleCategory(id: string) {
+    form.sync.categories = form.sync.categories.includes(id) ? form.sync.categories.filter((c) => c !== id) : [...form.sync.categories, id];
+  }
+
+  function describe(st: SyncStatus | null) {
+    if (!st || !st.at) return "Not synced yet.";
+    const when = new Date(st.at).toLocaleTimeString();
+    if (st.error) return `Last sync ${when} failed: ${st.error}`;
+    const r = st.report;
+    return `Last sync ${when}: ↑${r.uploaded} ↓${r.downloaded} ✕${r.deleted}` + (r.skipped ? ` (${r.skipped} skipped, too large)` : "");
+  }
+
+  async function syncNow() {
+    if (dirty) await save();
+    syncing = true;
+    try {
+      await invoke("sync_now");
+    } catch (e) {
+      status = { ok: false, msg: String(e) };
+    } finally {
+      lastSync = await invoke<SyncStatus>("sync_status");
+      syncing = false;
+    }
+  }
 
   function keyName(e: KeyboardEvent): string | null {
     if (/^Key[A-Z]$/.test(e.code)) return e.code.slice(3);
@@ -135,6 +174,30 @@
   </section>
 
   <section>
+    <h2>Sync</h2>
+    <label class="f check"><span>Enable sync</span><input type="checkbox" bind:checked={form.sync.enabled} /></label>
+    <div class="f">
+      <div>
+        <div class="label">Sync automatically</div>
+        <div class="hint">Items in these categories are uploaded. Anything else syncs only when its ☁ is on. Files are never synced.</div>
+      </div>
+      <div class="chips">
+        {#each SYNC_CATEGORIES as c}
+          <button class="chip" class:on={form.sync.categories.includes(c.id)} onclick={() => toggleCategory(c.id)}>{c.label}</button>
+        {/each}
+      </div>
+    </div>
+    <label class="f"><span>Check for changes every</span>
+      <select bind:value={form.sync.interval_secs}>{#each INTERVALS as i}<option value={i.v}>{i.l}</option>{/each}</select>
+    </label>
+    <label class="f"><span>Skip images larger than (MB)</span><input type="number" min="1" max="100" bind:value={form.sync.max_blob_mb} /></label>
+    <div class="f">
+      <span class="hint" class:err={lastSync?.error}>{describe(lastSync)}</span>
+      <button disabled={syncing || !form.sync.enabled} onclick={syncNow}>{syncing ? "Syncing…" : "Sync now"}</button>
+    </div>
+  </section>
+
+  <section>
     <h2>Data</h2>
     <div class="field">
       <div>
@@ -175,6 +238,10 @@
   .f > span { color: var(--fg); }
   .f input.wide { width: 300px; text-align: left; }
   .f.check input { width: auto; }
+  .chips { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+  .chip.on { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+  select { padding: 6px 10px; border-radius: 8px; border: 1px solid var(--line); background: var(--chip); }
+  .hint.err { color: #e5484d; }
   button, input { padding: 6px 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--chip); }
   input { width: 100px; text-align: right; outline: none; user-select: text; }
   input:focus, .keys.rec { border-color: var(--accent); }

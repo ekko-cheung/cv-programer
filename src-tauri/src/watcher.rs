@@ -66,6 +66,7 @@ impl ClipboardHandler for Handler {
             eprintln!("store error: {e}");
             return;
         }
+        state.sync_dirty.store(true, std::sync::atomic::Ordering::Relaxed);
         if let Ok(orphans) = state.store.prune(state.settings.lock().unwrap().max_items) {
             for p in orphans {
                 let _ = fs::remove_file(p);
