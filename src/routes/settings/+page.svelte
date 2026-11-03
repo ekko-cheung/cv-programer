@@ -2,12 +2,13 @@
   import { invoke } from "@tauri-apps/api/core";
   import { onMount } from "svelte";
   import { isMac, prettyAccelerator as pretty } from "$lib/platform";
+  import { applyFonts, type Appearance } from "$lib/appearance";
 
   type S3 = { endpoint: string; region: string; bucket: string; prefix: string; access_key: string; path_style: boolean };
   type Sync = { enabled: boolean; categories: string[]; interval_secs: number; max_blob_mb: number };
   type Report = { uploaded: number; downloaded: number; deleted: number; skipped: number };
   type SyncStatus = { at: number; error: string | null; report: Report };
-  type Settings = { hotkey: string; max_items: number; s3: S3; sync: Sync };
+  type Settings = { hotkey: string; max_items: number; s3: S3; sync: Sync; appearance: Appearance };
 
   const SYNC_CATEGORIES = [
     { id: "text", label: "Text" },
@@ -18,7 +19,7 @@
   const INTERVALS = [{ v: 60, l: "1 minute" }, { v: 300, l: "5 minutes" }, { v: 900, l: "15 minutes" }, { v: 3600, l: "1 hour" }];
 
   let saved = $state<Settings | null>(null);
-  let form = $state<Settings>({ hotkey: "", max_items: 2000, s3: { endpoint: "", region: "", bucket: "", prefix: "", access_key: "", path_style: false }, sync: { enabled: false, categories: [], interval_secs: 300, max_blob_mb: 10 } });
+  let form = $state<Settings>({ hotkey: "", max_items: 2000, s3: { endpoint: "", region: "", bucket: "", prefix: "", access_key: "", path_style: false }, sync: { enabled: false, categories: [], interval_secs: 300, max_blob_mb: 10 }, appearance: { glass: false, glass_opacity: 70, font_ui: "", font_mono: "" } });
   let syncing = $state(false);
   let lastSync = $state<SyncStatus | null>(null);
   let secret = $state("");
@@ -33,9 +34,13 @@
   onMount(async () => {
     saved = await invoke<Settings>("get_settings");
     form = structuredClone($state.snapshot(saved));
+    applyFonts(form.appearance);
     hasSecret = await invoke<boolean>("has_s3_secret");
     lastSync = await invoke<SyncStatus>("sync_status");
   });
+
+  // Fonts preview live in this window; glass applies the next time the panel opens.
+  $effect(() => applyFonts({ font_ui: form.appearance.font_ui, font_mono: form.appearance.font_mono }));
 
   function toggleCategory(id: string) {
     form.sync.categories = form.sync.categories.includes(id) ? form.sync.categories.filter((c) => c !== id) : [...form.sync.categories, id];
@@ -153,6 +158,35 @@
   </section>
 
   <section>
+    <h2>Appearance</h2>
+    <label class="f check">
+      <div>
+        <div class="label">Glass effect</div>
+        <div class="hint">Translucent, blurred panel background. Takes effect the next time the panel opens.</div>
+      </div>
+      <input type="checkbox" bind:checked={form.appearance.glass} />
+    </label>
+    <label class="f">
+      <span>Glass opacity</span>
+      <span class="slider"><input type="range" min="30" max="95" step="5" bind:value={form.appearance.glass_opacity} disabled={!form.appearance.glass} /><span class="hint">{form.appearance.glass_opacity}%</span></span>
+    </label>
+    <label class="f">
+      <div>
+        <div class="label">Interface font</div>
+        <div class="hint">Font family name, tried before the system font. Leave empty for the default.</div>
+      </div>
+      <input class="wide" bind:value={form.appearance.font_ui} placeholder='e.g. Inter, "LXGW WenKai"' spellcheck="false" />
+    </label>
+    <label class="f">
+      <div>
+        <div class="label">Code font</div>
+        <div class="hint">Used for code snippets and shortcut labels.</div>
+      </div>
+      <input class="wide" bind:value={form.appearance.font_mono} placeholder='e.g. "Fira Code"' spellcheck="false" />
+    </label>
+  </section>
+
+  <section>
     <h2>S3 storage</h2>
     <p class="hint block">Items marked with ☁ are synced to this bucket. Works with AWS S3, Cloudflare R2, MinIO, Aliyun OSS and other S3-compatible services.</p>
 
@@ -240,6 +274,9 @@
   .f.check input { width: auto; }
   .chips { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
   .chip.on { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+  .slider { display: flex; align-items: center; gap: 10px; }
+  input[type="range"] { width: 160px; padding: 0; accent-color: var(--accent); }
+  .slider .hint { width: 36px; margin: 0; }
   select { padding: 6px 10px; border-radius: 8px; border: 1px solid var(--line); background: var(--chip); }
   .hint.err { color: #e5484d; }
   button, input { padding: 6px 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--chip); }

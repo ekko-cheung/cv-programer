@@ -11,6 +11,7 @@ use settings::Settings;
 use std::{fs, path::PathBuf, sync::{atomic::{AtomicBool, Ordering}, Arc, Mutex}, time::Duration};
 use store::{Item, Store};
 use tauri::{
+    utils::{config::WindowEffectsConfig, WindowEffect, WindowEffectState},
     menu::{Menu, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     AppHandle, Manager, WebviewUrl, WebviewWindowBuilder, WindowEvent,
@@ -207,7 +208,12 @@ fn toggle_panel(app: &AppHandle) {
         let _ = w.close();
         return;
     }
-    let Ok(w) = WebviewWindowBuilder::new(app, "panel", WebviewUrl::App("index.html".into()))
+    let glass = {
+        let st = app.state::<Arc<AppState>>();
+        let a = st.settings.lock().unwrap().appearance.clone();
+        a.glass.then_some(a.glass_opacity)
+    };
+    let mut builder = WebviewWindowBuilder::new(app, "panel", WebviewUrl::App("index.html".into()))
         .title("Clipboard")
         .inner_size(600.0, 560.0)
         .decorations(false)
@@ -215,9 +221,20 @@ fn toggle_panel(app: &AppHandle) {
         .always_on_top(true)
         .skip_taskbar(true)
         .center()
-        .focused(true)
-        .build()
-    else {
+        .focused(true);
+    if let Some(opacity) = glass {
+        // Runs before the page's own scripts, so the glass background is painted from the first frame.
+        builder = builder
+            .initialization_script(format!("window.__GLASS_OPACITY__ = {opacity};"))
+            .transparent(true).effects(WindowEffectsConfig {
+            effects: vec![if cfg!(target_os = "macos") { WindowEffect::Popover } else { WindowEffect::Acrylic }],
+            state: Some(WindowEffectState::Active),
+            radius: Some(14.0),
+            color: None,
+            ..Default::default()
+        });
+    }
+    let Ok(w) = builder.build() else {
         return;
     };
     // As an Accessory (tray-only) app on macOS the window doesn't become key on its own.

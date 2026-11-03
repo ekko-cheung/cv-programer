@@ -36,6 +36,30 @@ impl Default for SyncConfig {
     }
 }
 
+#[derive(Serialize, Deserialize, Clone, PartialEq)]
+#[serde(default)]
+pub struct Appearance {
+    /// Translucent, blurred panel background (needs a transparent window, applied when the panel opens).
+    pub glass: bool,
+    /// Surface opacity over the blur, 30–95 (%).
+    pub glass_opacity: u32,
+    /// CSS font-family list tried before the system UI font; empty keeps the default.
+    pub font_ui: String,
+    /// Same, for code and shortcut labels.
+    pub font_mono: String,
+}
+
+impl Default for Appearance {
+    fn default() -> Self {
+        Self { glass: false, glass_opacity: 70, font_ui: String::new(), font_mono: String::new() }
+    }
+}
+
+/// Keeps only characters that can appear in a font-family list, so the value can't break out of a CSS declaration.
+fn clean_font(s: &str) -> String {
+    s.chars().filter(|c| c.is_alphanumeric() || " ,'\"-_.".contains(*c)).take(200).collect::<String>().trim().to_string()
+}
+
 #[derive(Serialize, Deserialize, Clone)]
 #[serde(default)]
 pub struct Settings {
@@ -45,6 +69,7 @@ pub struct Settings {
     pub max_items: i64,
     pub s3: S3Config,
     pub sync: SyncConfig,
+    pub appearance: Appearance,
 }
 
 pub fn default_hotkey() -> String {
@@ -53,13 +78,16 @@ pub fn default_hotkey() -> String {
 
 impl Default for Settings {
     fn default() -> Self {
-        Self { hotkey: default_hotkey(), max_items: 2000, s3: S3Config::default(), sync: SyncConfig::default() }
+        Self { hotkey: default_hotkey(), max_items: 2000, s3: S3Config::default(), sync: SyncConfig::default(), appearance: Appearance::default() }
     }
 }
 
 impl Settings {
     pub fn sanitized(mut self) -> Self {
         self.max_items = self.max_items.clamp(MIN_ITEMS, MAX_ITEMS);
+        self.appearance.glass_opacity = self.appearance.glass_opacity.clamp(30, 95);
+        self.appearance.font_ui = clean_font(&self.appearance.font_ui);
+        self.appearance.font_mono = clean_font(&self.appearance.font_mono);
         self.sync.interval_secs = self.sync.interval_secs.clamp(60, 3600);
         self.sync.max_blob_mb = self.sync.max_blob_mb.clamp(1, 100);
         self.sync.categories.retain(|c| SYNC_CATEGORIES.contains(&c.as_str()));

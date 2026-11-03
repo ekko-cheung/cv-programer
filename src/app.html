@@ -4,7 +4,15 @@
     <meta charset="utf-8" />
     <link rel="icon" href="%sveltekit.assets%/favicon.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Tauri + SvelteKit + Typescript App</title>
+    <title>CV Programer</title>
+    <script>
+      // Set by the backend (initialization script) when the glass effect is on.
+      var g = window.__GLASS_OPACITY__;
+      if (g) {
+        document.documentElement.dataset.glass = "on";
+        document.documentElement.style.setProperty("--glass-alpha", String(Math.min(95, Math.max(30, +g || 70)) / 100));
+      }
+    </script>
     %sveltekit.head%
   </head>
   <body data-sveltekit-preload-data="hover">

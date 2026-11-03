@@ -3,6 +3,7 @@
   import { listen } from "@tauri-apps/api/event";
   import { onMount, tick } from "svelte";
   import { combo, isMac } from "$lib/platform";
+  import { applyFonts, type Appearance } from "$lib/appearance";
 
   type Item = { id: number; kind: string; category: string; preview: string; blob: string | null; created: number; pinned: boolean; sync: boolean };
   type Count = { category: string; count: number };
@@ -67,6 +68,7 @@
   }
 
   onMount(() => {
+    invoke<{ appearance: Appearance }>("get_settings").then((s) => applyFonts(s.appearance));
     load();
     const focus = () => { search.focus(); search.select(); };
     focus();
@@ -138,7 +140,7 @@
   .tag.code { color: #2f9e6e; } .tag.link { color: #2f7be0; } .tag.image { color: #d9822b; } .tag.file { color: #b04fd0; }
   .body { flex: 1; min-width: 0; }
   .text { display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; word-break: break-all; white-space: pre-wrap; max-height: 2.8em; }
-  .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 12px; }
+  .mono { font-family: var(--font-mono); font-size: 12px; }
   img { max-height: 72px; max-width: 100%; border-radius: 6px; display: block; }
   .meta { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; flex: none; }
   .time { font-size: 11px; color: var(--muted); }
@@ -146,7 +148,7 @@
   .row.sel .acts { display: flex; } .row.sel .time { display: none; }
   .acts button { padding: 2px 5px; border-radius: 6px; opacity: 0.5; font-size: 12px; }
   .acts button:hover, .acts button.active { opacity: 1; background: var(--chip); }
-  kbd { font: 11px ui-monospace, monospace; color: var(--muted); flex: none; min-width: 28px; text-align: right; white-space: nowrap; }
+  kbd { font: 11px var(--font-mono); color: var(--muted); flex: none; min-width: 28px; text-align: right; white-space: nowrap; }
   .empty { text-align: center; color: var(--muted); padding: 60px 0; }
   .gear { margin-left: 6px; opacity: 0.6; font-size: 13px; } .gear:hover { opacity: 1; }
   footer { align-items: center; display: flex; gap: 14px; justify-content: center; padding: 8px; border-top: 1px solid var(--line); color: var(--muted); font-size: 11px; }

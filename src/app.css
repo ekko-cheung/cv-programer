@@ -1,13 +1,27 @@
 :root {
-  --bg: #ffffff; --fg: #1c1c1e; --muted: #8a8a8e; --line: #e6e6ea; --hover: #f3f3f6;
-  --accent: #6a5cff; --accent-fg: #fff; --chip: #f0f0f4;
+  --bg: #ffffff; --bg-rgb: 255 255 255; --fg: #1c1c1e; --muted: #8a8a8e; --line: #e6e6ea; --hover: #f3f3f6;
+  --accent: #6a5cff; --accent-fg: #fff; --chip: #f0f0f4; --glass-alpha: 0.7;
+  --font-ui-default: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI Variable Text", "Segoe UI", "PingFang SC", "Microsoft YaHei UI", system-ui, sans-serif;
+  --font-mono-default: "JetBrains Mono", "SF Mono", ui-monospace, "Cascadia Code", Menlo, Consolas, "PingFang SC", "Microsoft YaHei UI", monospace;
+  --font-ui: var(--font-ui-default);
+  --font-mono: var(--font-mono-default);
   color-scheme: light dark;
 }
 @media (prefers-color-scheme: dark) {
-  :root { --bg: #1d1d21; --fg: #f2f2f5; --muted: #8e8e96; --line: #2d2d33; --hover: #28282e; --chip: #2a2a30; }
+  :root { --bg: #1d1d21; --bg-rgb: 29 29 33; --fg: #f2f2f5; --muted: #8e8e96; --line: #2d2d33; --hover: #28282e; --chip: #2a2a30; }
 }
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg); overflow: hidden;
-  font: 13px/1.4 -apple-system, "Segoe UI Variable", "Segoe UI", system-ui, sans-serif; -webkit-font-smoothing: antialiased; user-select: none; cursor: default; }
-button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
-input { font: inherit; color: inherit; }
+  font: 13px/1.45 var(--font-ui); -webkit-font-smoothing: antialiased; user-select: none; cursor: default; }
+button, input, select { font: inherit; color: inherit; }
+button { background: none; border: 0; cursor: pointer; }
+
+/* Glass: the window itself is transparent and blurred by the OS; only the panel surface is tinted. */
+html[data-glass="on"], html[data-glass="on"] body { background: transparent; }
+html[data-glass="on"] main {
+  background: rgb(var(--bg-rgb) / var(--glass-alpha));
+  border: 1px solid rgb(128 128 128 / 0.25);
+  border-radius: 14px;
+  overflow: hidden;
+}
+html[data-glass="on"] { --chip: rgb(128 128 128 / 0.16); --hover: rgb(128 128 128 / 0.18); --line: rgb(128 128 128 / 0.22); }
