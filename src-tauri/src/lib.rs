@@ -145,8 +145,7 @@ fn clear_history(state: State, keep_pinned: bool) -> Result<(), String> {
     Ok(())
 }
 
-#[tauri::command]
-fn open_settings(app: AppHandle) {
+fn show_settings(app: &AppHandle) {
     if let Some(p) = app.get_webview_window("panel") {
         let _ = p.close();
     }
@@ -155,13 +154,20 @@ fn open_settings(app: AppHandle) {
         let _ = w.set_focus();
         return;
     }
-    let _ = WebviewWindowBuilder::new(&app, "settings", WebviewUrl::App("settings".into()))
+    let _ = WebviewWindowBuilder::new(app, "settings", WebviewUrl::App("settings".into()))
         .title("Settings")
         .inner_size(600.0, 700.0)
         .min_inner_size(520.0, 480.0)
         .center()
         .focused(true)
         .build();
+}
+
+/// Must be `async`: on Windows, creating a window from a synchronous command runs on the main
+/// thread while it waits for the window to be created, which deadlocks and freezes the app.
+#[tauri::command]
+async fn open_settings(app: AppHandle) {
+    show_settings(&app);
 }
 
 #[tauri::command]
@@ -324,7 +330,7 @@ pub fn run() {
                 .show_menu_on_left_click(false)
                 .on_menu_event(|app, ev| match ev.id.as_ref() {
                     "show" => toggle_panel(app),
-                    "settings" => open_settings(app.clone()),
+                    "settings" => show_settings(app),
                     "quit" => app.exit(0),
                     _ => {}
                 })
