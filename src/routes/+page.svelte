@@ -22,6 +22,8 @@
   let tab = $state("all");
   let query = $state("");
   let sel = $state(0);
+  let panelPinned = $state(false);
+  let updatingPanelPin = false;
   let search: HTMLInputElement;
   let listEl: HTMLDivElement;
 
@@ -39,6 +41,19 @@
     await invoke(key === "pinned" ? "set_pinned" : "set_sync", { id: i.id, value: !i[key] });
     load();
   }
+
+  async function togglePanelPin() {
+    if (updatingPanelPin) return;
+    updatingPanelPin = true;
+    const value = !panelPinned;
+    try {
+      await invoke("set_panel_pinned", { value });
+      panelPinned = value;
+    } finally {
+      updatingPanelPin = false;
+    }
+  }
+
   async function remove(i: Item) { await invoke("delete_item", { id: i.id }); load(); }
 
   function ago(ms: number) {
@@ -59,7 +74,7 @@
     const cur = items[sel];
     if (e.key === "ArrowDown") { e.preventDefault(); move(1); }
     else if (e.key === "ArrowUp") { e.preventDefault(); move(-1); }
-    else if (e.key === "Enter" && cur) { e.preventDefault(); paste(cur); }
+    else if (e.key === "Enter" && cur && !(e.target instanceof HTMLButtonElement && e.target.classList.contains("panel-pin"))) { e.preventDefault(); paste(cur); }
     else if (e.key === "Escape") invoke("hide_panel");
     else if (e.key === "Tab") { e.preventDefault(); setTab(TABS[(TABS.findIndex((t) => t.id === tab) + (e.shiftKey ? TABS.length - 1 : 1)) % TABS.length].id); }
     else if ((e.metaKey || e.ctrlKey) && e.key === "p" && cur) { e.preventDefault(); toggle(cur, "pinned"); }
@@ -86,6 +101,13 @@
 <main>
   <header>
     <input bind:this={search} bind:value={query} oninput={() => { sel = 0; load(); }} placeholder="Search clipboard history…" spellcheck="false" autocomplete="off" />
+    <button
+      class="panel-pin"
+      aria-label="Pin clipboard window"
+      aria-pressed={panelPinned}
+      title={panelPinned ? "Unpin clipboard window" : "Keep clipboard window open when it loses focus"}
+      onclick={togglePanelPin}
+    >Pin</button>
   </header>
   <nav>
     {#each TABS as t}
@@ -125,9 +147,12 @@
 
 <style>
   main { display: flex; flex-direction: column; height: 100vh; }
-  header { padding: 14px 14px 8px; }
-  input { width: 100%; padding: 10px 14px; border-radius: 10px; border: 1px solid var(--line); background: var(--chip); outline: none; user-select: text; }
+  header { display: flex; gap: 8px; padding: 14px 14px 8px; }
+  input { flex: 1; min-width: 0; padding: 10px 14px; border-radius: 10px; border: 1px solid var(--line); background: var(--chip); outline: none; user-select: text; }
   input:focus { border-color: var(--accent); }
+  .panel-pin { padding: 0 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--chip); }
+  .panel-pin:hover { background: var(--hover); }
+  .panel-pin[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
   nav { display: flex; gap: 4px; padding: 0 14px 8px; border-bottom: 1px solid var(--line); }
   nav button { padding: 5px 10px; border-radius: 8px; color: var(--muted); display: flex; gap: 6px; align-items: center; }
   nav button span { font-size: 11px; opacity: 0.7; }

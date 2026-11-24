@@ -22,6 +22,7 @@ pub struct AppState {
     pub store: Store,
     pub blob_dir: PathBuf,
     pub settings: Mutex<Settings>,
+    panel_pinned: AtomicBool,
     pub sync_lock: Mutex<()>,
     pub sync_dirty: AtomicBool,
     pub sync_status: Mutex<syncer::Status>,
@@ -171,6 +172,11 @@ async fn open_settings(app: AppHandle) {
 }
 
 #[tauri::command]
+fn set_panel_pinned(state: State, value: bool) {
+    state.panel_pinned.store(value, Ordering::Relaxed);
+}
+
+#[tauri::command]
 fn hide_panel(app: AppHandle) {
     if let Some(w) = app.get_webview_window("panel") {
         let _ = w.close();
@@ -214,9 +220,10 @@ fn toggle_panel(app: &AppHandle) {
         let _ = w.close();
         return;
     }
+    let state = app.state::<Arc<AppState>>().inner().clone();
+    state.panel_pinned.store(false, Ordering::Relaxed);
     let glass = {
-        let st = app.state::<Arc<AppState>>();
-        let a = st.settings.lock().unwrap().appearance.clone();
+        let a = state.settings.lock().unwrap().appearance.clone();
         a.glass.then_some(a.glass_opacity)
     };
     let mut builder = WebviewWindowBuilder::new(app, "panel", WebviewUrl::App("index.html".into()))
@@ -248,7 +255,7 @@ fn toggle_panel(app: &AppHandle) {
     let _ = w.set_focus();
     let win = w.clone();
     w.on_window_event(move |ev| {
-        if let WindowEvent::Focused(false) = ev {
+        if matches!(ev, WindowEvent::Focused(false)) && !state.panel_pinned.load(Ordering::Relaxed) {
             let _ = win.close();
         }
     });
@@ -273,6 +280,7 @@ pub fn run() {
             delete_item,
             set_pinned,
             set_sync,
+            set_panel_pinned,
             hide_panel,
             paste_item,
             get_settings,
@@ -308,6 +316,7 @@ pub fn run() {
                 store,
                 blob_dir,
                 settings: Mutex::new(settings),
+                panel_pinned: AtomicBool::new(false),
                 sync_lock: Mutex::new(()),
                 sync_dirty: AtomicBool::new(false),
                 sync_status: Mutex::new(syncer::Status::default()),
